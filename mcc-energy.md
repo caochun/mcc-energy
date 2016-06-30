@@ -17,4 +17,6 @@
 云端融合是解决设备能耗问题的一个重要方式，这一技术方式为解决能耗问题提供了各种可能和无限想象
 
 
-## 代码卸载（Code offloading）
+## 计算迁移（Computation offloading）
+
+## 设备嫁接（Sensor Offloading）
