@@ -84,4 +84,67 @@ CloneCloud的系统支持了自动对代码进行划分并在运行时完成方�
 于MAUI等工作类似，作者选取了计算密集（Linpack）、交互性游戏（3D赛车）和计算交互兼具（国际象棋）等三类应用开展实验，实验结果表明，重构后的Android应用在网络通讯不频繁的计算密集型Android应用运行时能降低其在移动设备端27~83%的能耗，在游戏类交互性应用中随能耗平均降低仅约25%，但应用性能提升还是较为明显。
 
 
-## 设备嫁接（Sensor Offloading）
+## 实现设备嫁接（Sensor Offloading）的CoseDroid
+
+在终端和云端间进行计算迁移的主要问题在于云端缺乏真实的终端运行环境，因此前述工作对应用可迁移部分的限制条件较为苛刻，一般而言仅与移动平台无关的计算部分可迁移到云端执行。如果计算迁移发生在移动终端之间，由于不同终端可能存在完全或部分相同的运行环境，因此可迁移部分可较前述工作更为宽松。基于这一想法，南京大学提出了一个CoseDroid框架实现终端间计算迁移。在该框架下，一个计算过程（对象方法）是否可迁移仅要求其是1）“非交互式”的，即改代码执行过程中无需在两个设备间进行消息传递；2）“安全”的，即在满足“非交互式”要求的前提下，方法在本地和远程设备上执行结果状态是一致的。作者使用Soot工具对代码进行静态分析并寻找满足这两个条件的方法，并通过代码插桩使得应用中这部分代码可在运行时由CoseDroid框架将代码和序列化的对象状态从当前设备（host 终端）发送到另一个终端设备（server终端）实现计算迁移。系统架构如下图所示。
+
+<p style="text-align: center"><img src="CoseDroid.png" style="height: 200px;"/></p>
+
+同样，作者通过选取了若干应用进行实验，验证了CoseDroid在能耗方面对host终端的能耗优化。虽然这一能耗开销被转移到server终端，并且由于这其中网络通信等开销，两个设备为实验应用运行合计消耗的电能甚至大与该应用在host终端上独立运行的开销，但这一模式仍然存在现实意义，即CoseDroid可支持移动终端用户间的“借电”，非紧急用户可将其终端所拥有电能赠予或出售给紧急用户，让后者在缺乏云端基础设置的场景下仍能无缝地完成计算迁移降低自身电量消耗。
+
+在此思路的基础上，CoseDroid进一步实现了传感器“嫁接”（Sensor offloading）概念，即允许host终端使用server终端的传感器获取位置、加速度等环境信息。该技术的实现主要基于对Android平台传感器数据获取模式的观察，通过应用代码插桩，让应用向CoseDroid框架中的虚拟传感器管理器（VSM）进行传感数据申请和监听器注册等过程。虚拟传感管理器替代真实管理器，在框架通信层支撑下完成在远程server终端的传感器管理器进行数据获取申请和监听器注册等对应过程，并将运行时生成的传感器数据传输回host终端。本质上host终端的VSM被实现为server终端真实传感管理器的代理对象，实现了host终端上应用对远程server终端传感器的使用。作者基于该技术改造了著名的Doodle Jump游戏，验证了技术的有效性。
+
+从能耗优化的角度来看，如果嫁接的是加速度、温湿度和磁场等低功耗传感器，由于通讯开销较传感器本身功耗而言大若干数量级，使用这一技术反而会导致能耗增加，但对于某些功耗较大的传感器（例如GPS）或在应用需要长时间对传感器数据进行监听获取的场景下，使用CoseDroid也能较为显著降低应用能耗开销。在作者实验中，一款Shake工具通过CoseDroid平台使用其他移动终端传感器后可获得了约50%的能耗节省。
+
+## 小结
+
+为移动终端实现计算迁移从而达到提升性能和能耗优化目的工作非常丰富，本文并不试图对该领域工作进行完整综述，而是通过几个较为典型工作的简介展示这种以计算迁移实现的云端融合计算模式在解决终端能耗优化问题上的技术路线和方法。对该领域有兴趣的读者可以参考[MCC]对既有工作的总结和对比，出了本文中提及的MAUI和CloneCloud外，还包括ThinkAir、COMET、EMCO等。这些已有工作都通过实验证明使用计算迁移可省电。。。但实际运行中这一省电效果并不明确，主要原因包括：
+
+1. 系统可offloading的实际非常有限，
+2. offloading 的决策很困难，因为能耗模型并不精确、并且受多种因素影响
+3. offloading很难做到全局优化，这就像libdispatch一样
+
+综合而言，云-端融合应用的出现实质上是在软件技术层面我们对于应用运行时的环境适应能力要求的一个体现，特别是在移动互联网和云计算技术并行快速发展的技术背景下，云-端融合应用可充分利用云计算资源为终端用户带来更为良好的使用体验。工业产品中的云-端融合应用在特定场景下实现固定模式的云-端融合技术方案，为移动端应用提供云端的计算、存储和网络等各类资源；学术界的研究则集中在更为灵活的融合模式的支撑和实现，以代码迁移实现运行时云端资源的动态利用。从这些云-端融合应用系统的软件架构来看，前者实际与传统客户机服务器模式并无显著差异，后者则体现了我们对这种固化的客户机服务器模式所进行的改进：在运行时决策应用组件的物理部署，实现动态可适应的新型分布式计算模型。
+
+当然以这一新型分布式计算模型实现通用普适的云-端融合计算应用还亟待技术的改进和完善。一方面，当前所研究的代码迁移工作使用外部机制对代码进行重构分割，在缺少原有应用代码设计和实现语义的情况下可能带来性能不升反降的风险（例如分割迁移到云端的某个系统构件可能运行时与驻留于终端的构件存在大量通讯），因此，在语言和应用框架层面提供机制让开发者表达与代码迁移相关的元层设计语义可能是云-端融合技术在软件技术层面的一个研究方向。另一方面，当前融合技术基于虚拟机或代码托管环境状态支持代码的在线迁移，但一般都预先作了迁移两端环境同构的假设，而实际上这一点对于通用的云-端融合技术应用场景而言也是未必成立的，代码在端到云、云到端、云到云和端到端间迁移必然需要考虑环境（包括硬件平台和软件栈等）异构的问题，因此云-端融合应用在运行支撑方面更需要融入当前容器等高层应用封装、部署和管理技术，构造真正支持以按需方式、通过在不同计算平台上自由流动实现高效、智能资源利用的新一代应用形态。
+
+
+## 参考文献
+
+[1] Zhang L, Tiwana B, Qian Z, et al. Accurate online power estimation and automatic battery behavior based power model generation for smartphones[C]//Proceedings of the eighth IEEE/ACM/IFIP international conference on Hardware/software codesign and system synthesis. ACM, 2010: 105-114.
+
+[2] Dong M, Zhong L. Self-constructive high-rate system energy modeling for battery-powered mobile systems[C]//Proceedings of the 9th international conference on Mobile systems, applications, and services. ACM, 2011: 335-348.
+
+[3] Jung W, Kang C, Yoon C, et al. DevScope: a nonintrusive and online power analysis tool for smartphone hardware components[C]//Proceedings of the eighth IEEE/ACM/IFIP international conference on Hardware/software codesign and system synthesis. ACM, 2012: 353-362.
+
+[4] Xu F, Liu Y, Li Q, et al. V-edge: Fast self-constructive power modeling of smartphones based on battery voltage dynamics[C]//Presented as part of the 10th USENIX Symposium on Networked Systems Design and Implementation (NSDI 13). 2013: 43-55.
+
+[5] Hao S, Li D, Halfond W G J, et al. Estimating Android applications' CPU energy usage via bytecode profiling[C]//Proceedings of the First International Workshop on Green and Sustainable Software. IEEE Press, 2012: 1-7.
+
+[6] Hao S, Li D, Halfond W G J, et al. Estimating mobile application energy consumption using program analysis[C]//Software Engineering (ICSE), 2013 35th International Conference on. IEEE, 2013: 92-101.
+
+[7] Pathak A, Jindal A, Hu Y C, et al. What is keeping my phone awake?: characterizing and detecting no-sleep energy bugs in smartphone apps[C]//Proceedings of the 10th international conference on Mobile systems, applications, and services. ACM, 2012: 267-280.
+
+[8] Liu Y, Xu C, Cheung S C. Where has my battery gone? Finding sensor related energy black holes in smartphone applications[C]//Pervasive Computing and Communications (PerCom), 2013 IEEE International Conference on. IEEE, 2013: 2-10.
+
+[9] Banerjee A, Chong L K, Chattopadhyay S, et al. Detecting energy bugs and hotspots in mobile apps[C]//Proceedings of the 22nd ACM SIGSOFT International Symposium on Foundations of Software Engineering. ACM, 2014: 588-598.
+
+[10] Lu Z, Cao C, Tao X P. Improing Screen Power Usage Model on Android Smartphones[C]//2015 Asia-Pacific Software Engineering Conference (APSEC). IEEE, 2015: 167-173.
+
+[11] Dong M, Zhong L. Chameleon: a color-adaptive web browser for mobile OLED displays[J]. Mobile Computing, IEEE Transactions on, 2012, 11(5): 724-738.
+
+[12] Zhuang Z, Kim K H, Singh J P. Improving energy efficiency of location sensing on smartphones[C]//Proceedings of the 8th international conference on Mobile systems, applications, and services. ACM, 2010: 315-330.
+
+[13] Kim K H, Min A W, Gupta D, et al. Improving energy efficiency of Wi-Fi sensing on smartphones[C]//INFOCOM, 2011 Proceedings IEEE. IEEE, 2011: 2930-2938.
+
+[14] Li D, Halfond W G J. An investigation into energy-saving programming practices for android smartphone app development[C]//Proceedings of the 3rd International Workshop on Green and Sustainable Software. ACM, 2014: 46-53.
+
+[15] [http://developer.android.com/training/articles/perf-tips.html](http://developer.android.com/training/articles/perf-tips.html)
+
+[16] Linares-Vásquez M, Bavota G, Bernal-Cárdenas C, et al. Mining energy-greedy api usage patterns in android apps: an empirical study[C]//Proceedings of the 11th Working Conference on Mining Software Repositories. ACM, 2014: 2-11.
+
+[17] Cuervo E, Balasubramanian A, Cho D, et al. MAUI: making smartphones last longer with code offload[C]//Proceedings of the 8th international conference on Mobile systems, applications, and services. ACM, 2010: 49-62.
+
+[18] Chun B G, Ihm S, Maniatis P, et al. Clonecloud: elastic execution between mobile device and cloud[C]//Proceedings of the sixth conference on Computer systems. ACM, 2011: 301-314.
+
+[19] Zhang Y, Huang G, Liu X, et al. Refactoring android java code for on-demand computation offloading[C]//ACM SIGPLAN Notices. ACM, 2012, 47(10): 233-248.
